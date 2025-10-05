@@ -1,0 +1,8 @@
+{
+  "name": "Spatial Canvas",
+  "description": "A mixed reality experience that blends digital content with the physical world through your device's camera. Interact with a spatial UI using hand gestures, powered by MediaPipe and Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
