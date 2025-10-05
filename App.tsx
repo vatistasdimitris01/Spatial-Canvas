@@ -163,6 +163,7 @@ const App: React.FC = () => {
         });
       }
       
+      // Dock hover logic (can be expanded if needed)
       const dockButtons = ['grid', 'camera', 'zoom', 'recenter'];
       dockButtons.forEach(id => {
           if (isCursorOverElement(hand, dockRefs.current.get(id) || null)) {
@@ -171,57 +172,59 @@ const App: React.FC = () => {
       });
 
       if (hand.gesture === 'PINCH_DOWN') {
-        let pinchedElementId: string | null = null;
-        
+        let pinchedElementIdForDrag: string | null = null;
+        let actionTaken = false;
+
+        // Window interactions
         if (activeWindow && !isResizing && hands.length === 1) {
-          if (isCursorOverElement(hand, windowDragHandleRef.current)) {
-            pinchedElementId = `drag-${activeWindow.id}`;
-            setIsDragging(true);
-            const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
-            const cursorY = hand.cursorPosition.y * window.innerHeight;
-            setDragOffset({ x: cursorX - activeWindow.position.x, y: cursorY - activeWindow.position.y });
-          } else if (isCursorOverElement(hand, windowCloseButtonRef.current)) {
-            pinchedElementId = `close-${activeWindow.id}`;
-          }
+            if (isCursorOverElement(hand, windowDragHandleRef.current)) {
+                // Start dragging
+                pinchedElementIdForDrag = `drag-${activeWindow.id}`;
+                setIsDragging(true);
+                const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
+                const cursorY = hand.cursorPosition.y * window.innerHeight;
+                setDragOffset({ x: cursorX - activeWindow.position.x, y: cursorY - activeWindow.position.y });
+                actionTaken = true;
+            } else if (isCursorOverElement(hand, windowCloseButtonRef.current)) {
+                // Close window immediately
+                setActiveWindow(null);
+                actionTaken = true;
+            }
         }
 
-        if (!pinchedElementId && isAppGridVisible && !activeWindow) {
+        // App Grid interactions
+        if (!actionTaken && isAppGridVisible && !activeWindow) {
             const pinchedApp = apps.find(app => isCursorOverElement(hand, appRefs.current.get(app.id) || null));
             if (pinchedApp) {
-              pinchedElementId = `app-${pinchedApp.id}`;
+                openApp(pinchedApp.id);
+                actionTaken = true;
             }
         }
 
-        if (!pinchedElementId) {
-            if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) pinchedElementId = 'dock-grid';
-            else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) pinchedElementId = 'dock-camera';
-            else if (isCursorOverElement(hand, dockRefs.current.get('zoom') || null)) pinchedElementId = 'dock-zoom';
-            else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) pinchedElementId = 'dock-recenter';
+        // Dock interactions
+        if (!actionTaken) {
+            if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) {
+                setIsAppGridVisible(v => !v);
+            } else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) {
+                toggleFacingMode();
+            } else if (isCursorOverElement(hand, dockRefs.current.get('zoom') || null)) {
+                toggleZoom();
+            } else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) {
+                recenter();
+            }
         }
+        
+        pinchStartRef.current[hand.id] = pinchedElementIdForDrag;
 
-        pinchStartRef.current[hand.id] = pinchedElementId;
-      } 
-      else if (hand.gesture === 'PINCH_UP') {
+      } else if (hand.gesture === 'PINCH_UP') {
         const releasedElementId = pinchStartRef.current[hand.id];
         
+        // Only thing to do on PINCH_UP is stop dragging
         if (releasedElementId?.startsWith('drag-')) {
           setIsDragging(false);
-        } else if (releasedElementId?.startsWith('close-') && isCursorOverElement(hand, windowCloseButtonRef.current)) {
-            setActiveWindow(null);
-        } else if (releasedElementId?.startsWith('app-')) {
-          const appId = releasedElementId.substring(4);
-          if (isCursorOverElement(hand, appRefs.current.get(appId) || null)) {
-            openApp(appId);
-          }
-        } else if (releasedElementId?.startsWith('dock-')) {
-            const dockId = releasedElementId.substring(5);
-            if (isCursorOverElement(hand, dockRefs.current.get(dockId) || null)) {
-                if (dockId === 'grid') setIsAppGridVisible(v => !v);
-                if (dockId === 'camera') toggleFacingMode();
-                if (dockId === 'zoom') toggleZoom();
-                if (dockId === 'recenter') recenter();
-            }
         }
+        
+        // Always clear the ref for this hand on release
         pinchStartRef.current[hand.id] = null;
       }
     });

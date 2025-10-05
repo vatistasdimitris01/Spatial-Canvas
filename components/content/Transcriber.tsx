@@ -38,10 +38,8 @@ export const Transcriber: React.FC = () => {
 
         const startTranscription = async () => {
             try {
-                if (!process.env.API_KEY) {
-                    throw new Error("API_KEY is not set.");
-                }
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                // FIX: Use process.env.API_KEY as per the coding guidelines. The key is assumed to be pre-configured.
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
                 setStatus('Requesting microphone access...');
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -68,6 +66,12 @@ export const Transcriber: React.FC = () => {
                             if (message.serverContent?.turnComplete) {
                                 setTranscription(prev => prev + ' ');
                             }
+                            // FIX: Per Gemini API guidelines, audio output must be handled even if not used.
+                            const base64EncodedAudioString =
+                                message.serverContent?.modelTurn?.parts[0]?.inlineData.data;
+                            if (base64EncodedAudioString) {
+                                // Audio data is received but not played back in this transcriber component.
+                            }
                         },
                         onerror: (e: ErrorEvent) => {
                             console.error('Live API Error:', e);
@@ -80,7 +84,8 @@ export const Transcriber: React.FC = () => {
                     },
                     config: {
                         inputAudioTranscription: {},
-                        responseModalities: [], // No audio response needed
+                        // FIX: responseModalities must be an array with a single `Modality.AUDIO` element.
+                        responseModalities: [Modality.AUDIO],
                     },
                 });
                 
