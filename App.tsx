@@ -33,7 +33,6 @@ const App: React.FC = () => {
   const dockRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
   const windowDragHandleRef = useRef<HTMLDivElement>(null);
   const windowCloseButtonRef = useRef<HTMLButtonElement>(null);
-  // FIX: Replaced NodeJS.Timeout with ReturnType<typeof setTimeout> for browser compatibility.
   const dockHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hands, setHands] = useState<HandData[]>([]);
@@ -229,27 +228,6 @@ const App: React.FC = () => {
     setHoveredAppId(currentHover);
   }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, toggleZoom]);
 
-  const renderScene = () => (
-    <>
-      <video
-        ref={videoRef}
-        className="absolute top-0 left-0 w-full h-full object-cover"
-        autoPlay
-        playsInline
-        muted
-        style={{ transform: `scaleX(${facingMode === 'user' ? -1 : 1})` }}
-      />
-      <div 
-        className="absolute inset-0" 
-        style={{ perspective: '1000px', transformStyle: 'preserve-3d' }}
-      >
-        <div className="absolute inset-0" style={{ transform: worldTransform }}>
-            {renderContent()}
-        </div>
-      </div>
-    </>
-  );
-
   const renderContent = () => {
     if (isTrackerLoading) {
       return (
@@ -327,21 +305,40 @@ const App: React.FC = () => {
       </>
     );
   };
+
+  const renderUI = () => (
+    <div 
+      className="absolute inset-0" 
+      style={{ perspective: '1000px', transformStyle: 'preserve-3d' }}
+    >
+      <div className="absolute inset-0" style={{ transform: worldTransform }}>
+          {renderContent()}
+      </div>
+    </div>
+  );
   
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-black flex items-center justify-center font-sans select-none">
-       {isVrMode ? (
-        <div className="vr-container">
+      <video
+        ref={videoRef}
+        className="absolute top-0 left-0 w-full h-full object-cover"
+        autoPlay
+        playsInline
+        muted
+        style={{ transform: `scaleX(${facingMode === 'user' ? -1 : 1})` }}
+      />
+      {isVrMode ? (
+        <div className="vr-container absolute inset-0">
           <div className="left-eye">
-            <div className="eye-content">{renderScene()}</div>
+            <div className="eye-content">{renderUI()}</div>
           </div>
           <div className="vr-divider" />
           <div className="right-eye">
-            <div className="eye-content">{renderScene()}</div>
+            <div className="eye-content">{renderUI()}</div>
           </div>
         </div>
       ) : (
-        renderScene()
+        renderUI()
       )}
     </main>
   );
