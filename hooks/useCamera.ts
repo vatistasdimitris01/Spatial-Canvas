@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 
 type FacingMode = 'user' | 'environment';
@@ -5,10 +6,9 @@ type FacingMode = 'user' | 'environment';
 export const useCamera = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [facingMode, setFacingMode] = useState<FacingMode>('user');
-  const [zoom, setZoom] = useState<number>(1);
+  const [facingMode, setFacingMode] = useState<FacingMode>('environment');
   
-  const getCamera = useCallback(async (mode: FacingMode, currentZoom: number) => {
+  const getCamera = useCallback(async (mode: FacingMode) => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Camera not supported on this browser.");
@@ -28,22 +28,6 @@ export const useCamera = () => {
       };
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      // Apply zoom if supported
-      const track = newStream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities();
-      // @ts-ignore
-      if (capabilities.zoom) {
-        // @ts-ignore
-        const minZoom = capabilities.zoom.min;
-        // @ts-ignore
-        const maxZoom = capabilities.zoom.max;
-        const targetZoom = currentZoom === 1 ? maxZoom : minZoom;
-        // FIX: Add @ts-ignore to allow using the non-standard 'zoom' property.
-        // @ts-ignore
-        await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
-      }
-
       setStream(newStream);
     } catch (err) {
       console.error("Error accessing camera:", err);
@@ -60,20 +44,15 @@ export const useCamera = () => {
     setFacingMode(newMode);
   };
   
-  const toggleZoom = () => {
-    const newZoom = zoom === 1 ? 0.5 : 1;
-    setZoom(newZoom);
-  };
-
   useEffect(() => {
-    getCamera(facingMode, zoom);
+    getCamera(facingMode);
     
     return () => {
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
         }
     }
-  }, [facingMode, zoom]);
+  }, [facingMode]);
 
-  return { videoStream: stream, cameraError: error, facingMode, toggleFacingMode, zoom, toggleZoom };
+  return { videoStream: stream, cameraError: error, facingMode, toggleFacingMode };
 };

@@ -5,28 +5,11 @@ import { HandData } from '../hooks/useHandTracking';
 const CURSOR_RADIUS = 10;
 const PINCH_EFFECT_RADIUS = 15;
 
-const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
-    const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
-    return {
-        x: centerX + radius * Math.cos(angleInRadians),
-        y: centerY + radius * Math.sin(angleInRadians),
-    };
-};
-
-const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
-    if (endAngle >= 359.99) endAngle = 359.99;
-    const start = polarToCartesian(x, y, radius, endAngle);
-    const end = polarToCartesian(x, y, radius, startAngle);
-    const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-};
-
 interface HandCursorProps {
     hand: HandData;
-    dwellProgress?: number;
 }
 
-const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
+const HandCursor: React.FC<HandCursorProps> = ({ hand }) => {
     const [pinchEvents, setPinchEvents] = useState<{ x: number, y: number, id: number }[]>([]);
 
     useEffect(() => {
@@ -58,9 +41,12 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
     const scale = 1 - cursorZ * 4;
     const finalRadius = CURSOR_RADIUS * scale;
 
-    const loaderPath = dwellProgress > 0 && dwellProgress < 1
-        ? describeArc(0, 0, finalRadius + 5, 0, dwellProgress * 360)
-        : null;
+    const Z_SCALING_FACTOR = -4000;
+    const UI_PLANE_Z = -700; // An arbitrary "zero point" for the UI
+    const handZ = (hand.landmarks[8]?.z || 0) * Z_SCALING_FACTOR;
+    const distance = handZ - UI_PLANE_Z; // distance in "pixels"
+    const distanceCm = (distance / 30).toFixed(0); // Arbitrary scaling to cm-like units
+    const distanceText = `${distance > 0 ? '+' : ''}${distanceCm} cm`;
     
     return (
         <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ zIndex: 100 }}>
@@ -85,15 +71,6 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
             ))}
 
             <g style={{ transform: `translate(${cursorX}px, ${cursorY}px)` }}>
-                 {loaderPath && (
-                    <path
-                        d={loaderPath}
-                        fill="none"
-                        stroke="rgba(59, 130, 246, 0.9)"
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                    />
-                )}
                 <circle
                     r={finalRadius}
                     fill="rgba(255, 255, 255, 0.3)"
@@ -104,6 +81,19 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
                         filter: isPinched ? 'url(#cursorGlow)' : 'none'
                     }}
                 />
+                 <text
+                    x={finalRadius + 8}
+                    y={finalRadius / 2}
+                    fill="white"
+                    fontSize="12"
+                    fontWeight="500"
+                    fontFamily="sans-serif"
+                    stroke="black"
+                    strokeWidth="0.3"
+                    paintOrder="stroke"
+                >
+                    {distanceText}
+                </text>
             </g>
         </svg>
     );
@@ -112,14 +102,13 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
 
 interface HandRendererProps {
   hands: HandData[];
-  dwellProgress: number;
 }
 
-export const HandRenderer: React.FC<HandRendererProps> = ({ hands, dwellProgress }) => {
+export const HandRenderer: React.FC<HandRendererProps> = ({ hands }) => {
   return (
     <>
       {hands.map((hand) => (
-        <HandCursor key={hand.id} hand={hand} dwellProgress={dwellProgress} />
+        <HandCursor key={hand.id} hand={hand} />
       ))}
     </>
   );

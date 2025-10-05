@@ -12,7 +12,6 @@ import { ActiveWindow, Photo, DisplayMode } from './types';
 import { getApps } from './apps';
 
 const DOCK_ACTIVITY_TIMEOUT = 4000; // 4 seconds
-const DWELL_CLICK_DURATION = 3000; // 3 seconds
 
 const isCursorOverElement = (hand: HandData, element: HTMLElement | null): boolean => {
   if (!element) return false;
@@ -25,6 +24,9 @@ const isCursorOverElement = (hand: HandData, element: HTMLElement | null): boole
 const getDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }): number => {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 };
+
+const Z_SCALING_FACTOR = -4000;
+const getHandZ = (hand: HandData) => (hand.landmarks[8]?.z || 0) * Z_SCALING_FACTOR;
 
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -49,7 +51,6 @@ const App: React.FC = () => {
   const [isDockActive, setIsDockActive] = useState(true);
   const [isWindowHovered, setIsWindowHovered] = useState(false);
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
-  const [dwellState, setDwellState] = useState<{ targetId: string | null; startTime: number | null }>({ targetId: null, startTime: null });
   
   const [photos, setPhotos] = useState<Photo[]>([]);
 
@@ -124,6 +125,16 @@ const App: React.FC = () => {
     }
   }, [apps]);
 
+  const getAppPositionZ = useCallback((appId: string): number => {
+      const index = apps.findIndex(a => a.id === appId);
+      if (index === -1) return -Infinity;
+      const arc = { radius: 800, angle: 8 };
+      const numIcons = apps.length;
+      const angle = (index - (numIcons - 1) / 2) * arc.angle;
+      const zRelative = -arc.radius * (1 - Math.cos(angle * Math.PI / 180));
+      return zRelative - 600; // AppGrid container is at translateZ(-600px)
+  }, [apps]);
+
   // Main Interaction Loop
   useEffect(() => {
     if (isDragging && activeWindow) {
@@ -156,6 +167,7 @@ const App: React.FC = () => {
 
     let currentHover: string | null = null;
     let isHandOverWindow = false;
+    let currentPressedId: string | null = null;
 
     if (activeWindow) {
         if (hands.some(hand => isCursorOverElement(hand, windowRef.current))) {
@@ -164,38 +176,26 @@ const App: React.FC = () => {
     }
     setIsWindowHovered(isHandOverWindow);
 
-    let currentPressedId: string | null = null;
     if (isAppGridVisible && !activeWindow) {
-        const pinchingHand = hands.find(h => h.gesture === 'PINCH_HELD' || h.gesture === 'PINCH_DOWN');
-        if (pinchingHand) {
-            const app = apps.find(app => isCursorOverElement(pinchingHand, appRefs.current.get(app.id) || null));
-            if (app) {
-                currentPressedId = app.id;
+        const handAndApp = hands
+            .map(hand => ({ hand, app: apps.find(app => isCursorOverElement(hand, appRefs.current.get(app.id) || null)) }))
+            .find(item => item.app);
+
+        if (handAndApp) {
+            const { hand, app } = handAndApp;
+            const handZ = getHandZ(hand);
+            const appZ = getAppPositionZ(app!.id);
+            
+            if (Math.abs(handZ - appZ) < 150) { // Hover threshold
+                currentHover = app!.id;
+                if (handZ < appZ) { // Press threshold (hand is behind the element)
+                    currentPressedId = app!.id;
+                }
             }
         }
     }
+    setHoveredAppId(currentHover);
     setPressedAppId(currentPressedId);
-
-
-    if (isAppGridVisible && !activeWindow) {
-      const currentlyHoveredApp = apps.find(app => hands.some(hand => isCursorOverElement(hand, appRefs.current.get(app.id) || null)));
-      currentHover = currentlyHoveredApp ? currentlyHoveredApp.id : null;
-
-      if (currentHover && currentHover !== dwellState.targetId) {
-          setDwellState({ targetId: currentHover, startTime: Date.now() });
-      } else if (!currentHover && dwellState.targetId) {
-          setDwellState({ targetId: null, startTime: null });
-      }
-    } else if (dwellState.targetId) {
-        setDwellState({ targetId: null, startTime: null });
-    }
-    
-    if (dwellState.targetId && dwellState.startTime) {
-        if (Date.now() - dwellState.startTime >= DWELL_CLICK_DURATION) {
-            openApp(dwellState.targetId);
-            setDwellState({ targetId: null, startTime: null }); // Reset after click
-        }
-    }
 
     hands.forEach(hand => {
       if(hand.middleIndexDoubleTap) {
@@ -208,41 +208,49 @@ const App: React.FC = () => {
 
         // Window interactions
         if (activeWindow && !isResizing && hands.length === 1) {
+            const handZ = getHandZ(hand);
+            const windowZ = -400;
+
             if (isCursorOverElement(hand, windowDragHandleRef.current)) {
-                pinchedElementIdForDrag = `drag-${activeWindow.id}`;
-                setIsDragging(true);
-                const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
-                const cursorY = hand.cursorPosition.y * window.innerHeight;
-                setDragOffset({ x: cursorX - activeWindow.position.x, y: cursorY - activeWindow.position.y });
-                actionTaken = true;
+                if (Math.abs(handZ - windowZ) < 150) {
+                    pinchedElementIdForDrag = `drag-${activeWindow.id}`;
+                    setIsDragging(true);
+                    const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
+                    const cursorY = hand.cursorPosition.y * window.innerHeight;
+                    setDragOffset({ x: cursorX - activeWindow.position.x, y: cursorY - activeWindow.position.y });
+                    actionTaken = true;
+                }
             } else if (isCursorOverElement(hand, windowCloseButtonRef.current)) {
-                setActiveWindow(null);
-                setIsAppGridVisible(true);
-                actionTaken = true;
+                if (handZ < windowZ) { // Push through to close
+                    setActiveWindow(null);
+                    setIsAppGridVisible(true);
+                    actionTaken = true;
+                }
             }
         }
 
-        // App Grid interactions (only for non-dwell clicking)
+        // App Grid interactions
         if (!actionTaken && isAppGridVisible && !activeWindow) {
             const pinchedApp = apps.find(app => isCursorOverElement(hand, appRefs.current.get(app.id) || null));
-            if (pinchedApp) {
+            if(pinchedApp && pinchedApp.id === currentPressedId) {
                 openApp(pinchedApp.id);
-                setDwellState({ targetId: null, startTime: null }); // Cancel dwell on pinch
                 actionTaken = true;
             }
         }
 
         // Dock interactions
         if (!actionTaken) {
-            if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) {
-                setIsAppGridVisible(v => !v);
-                if (activeWindow) {
-                    setActiveWindow(null);
+            const handZ = getHandZ(hand);
+            const dockZ = 0; // Dock is at z=0 plane
+            if (handZ < dockZ) { // Must push through the screen plane
+                if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) {
+                    setIsAppGridVisible(v => !v);
+                    if (activeWindow) setActiveWindow(null);
+                } else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) {
+                    toggleFacingMode();
+                } else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) {
+                    recenter();
                 }
-            } else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) {
-                toggleFacingMode();
-            } else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) {
-                recenter();
             }
         }
         
@@ -258,8 +266,8 @@ const App: React.FC = () => {
         pinchStartRef.current[hand.id] = null;
       }
     });
-    setHoveredAppId(currentHover);
-  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, dwellState.targetId, takePhoto]);
+
+  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, takePhoto, getAppPositionZ]);
   
   const renderContent = () => {
     if (isTrackerLoading) {
@@ -281,10 +289,6 @@ const App: React.FC = () => {
         </div>
       );
     }
-    
-    const dwellProgress = dwellState.targetId === hoveredAppId && dwellState.startTime
-      ? Math.min(1, (Date.now() - dwellState.startTime) / DWELL_CLICK_DURATION)
-      : 0;
 
     return (
       <>
@@ -332,7 +336,7 @@ const App: React.FC = () => {
             }
           </Window>
         )}
-        <HandRenderer hands={hands} dwellProgress={dwellProgress} />
+        <HandRenderer hands={hands} />
         {hands.length === 0 && !activeWindow && isAppGridVisible &&(
             <div className="absolute bottom-24 w-full text-center p-4 z-20" style={{ transform: 'translateZ(200px)'}}>
                 <p className="text-lg text-white bg-black/40 backdrop-blur-xl rounded-full px-8 py-4 inline-block shadow-lg border border-white/20">
