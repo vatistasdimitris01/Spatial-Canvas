@@ -1,4 +1,4 @@
-import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
 import React, { useState, useEffect, useRef } from 'react';
 
 // Audio Encoding Helper
@@ -28,7 +28,9 @@ export const Transcriber: React.FC = () => {
     const [status, setStatus] = useState('Initializing');
     const [transcription, setTranscription] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+    // FIX: The `LiveSession` type is not exported from the '@google/genai' package.
+    // Use `any` for the session promise type.
+    const sessionPromiseRef = useRef<Promise<any> | null>(null);
 
     useEffect(() => {
         let audioContext: AudioContext | null = null;

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useHandTracking, HandData } from './hooks/useHandTracking';
 import { useCamera } from './hooks/useCamera';
 import { useHeadTracking } from './hooks/useHeadTracking';
-import { HandCursor } from './components/HandCursor';
+import { HandRenderer } from './components/HandCursor';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { AppGrid } from './components/AppGrid';
 import { Window } from './components/Window';
@@ -295,9 +295,7 @@ const App: React.FC = () => {
             {activeWindow.content}
           </Window>
         )}
-        {hands.map(hand => (
-          <HandCursor key={hand.id} x={hand.cursorPosition.x} y={hand.cursorPosition.y} gesture={hand.gesture} />
-        ))}
+        <HandRenderer hands={hands} />
         {hands.length === 0 && !activeWindow && isAppGridVisible &&(
             <div className="absolute bottom-24 w-full text-center p-4 z-20" style={{ transform: 'translateZ(200px)'}}>
                 <p className="text-lg text-white bg-black/40 backdrop-blur-xl rounded-full px-8 py-4 inline-block shadow-lg border border-white/20">

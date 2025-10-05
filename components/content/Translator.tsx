@@ -1,4 +1,4 @@
-import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, Blob, Chat } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob, Chat } from '@google/genai';
 import React, { useState, useEffect, useRef } from 'react';
 
 // Audio Encoding Helper
@@ -30,7 +30,9 @@ export const Translator: React.FC = () => {
     const [transcription, setTranscription] = useState('');
     const [translation, setTranslation] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+    // FIX: The `LiveSession` type is not exported from the '@google/genai' package.
+    // Use `any` for the session promise type.
+    const sessionPromiseRef = useRef<Promise<any> | null>(null);
     const chatRef = useRef<Chat | null>(null);
     const textToTranslate = useRef('');
 
