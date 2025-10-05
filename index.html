@@ -72,22 +72,22 @@
     height: 100%;
   }
 
-  /* Added for pinch animation */
-  @keyframes pinch-pulse {
+  /* Tap animation */
+  @keyframes tap-ripple {
     0% {
       transform: scale(0.5);
-      opacity: 1;
+      opacity: 0.8;
       stroke-width: 4px;
     }
     100% {
-      transform: scale(4);
+      transform: scale(5);
       opacity: 0;
       stroke-width: 1px;
     }
   }
-  .animate-pinch-pulse {
+  .animate-tap-ripple {
     transform-origin: center;
-    animation: pinch-pulse 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    animation: tap-ripple 0.4s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
   }
 
   /* Added for photo flash animation */

@@ -31,7 +31,7 @@ const getHandZ = (hand: HandData) => (hand.landmarks[8]?.z || 0) * Z_SCALING_FAC
 
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const pinchStartRef = useRef<{ [key: number]: string | null }>({});
+  const tapStartRef = useRef<{ [key: number]: string | null }>({});
   const resizeStartRef = useRef<{ distance: number; width: number; height: number} | null>(null);
   const appRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const dockRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
@@ -139,7 +139,7 @@ const App: React.FC = () => {
   // Main Interaction Loop
   useEffect(() => {
     if (isDragging && activeWindow) {
-      const draggingHand = hands.find(h => pinchStartRef.current[h.id]?.startsWith(`drag-`));
+      const draggingHand = hands.find(h => tapStartRef.current[h.id]?.startsWith(`drag-`));
       if (draggingHand) {
         const cursorX = (1 - draggingHand.cursorPosition.x) * window.innerWidth;
         const cursorY = draggingHand.cursorPosition.y * window.innerHeight;
@@ -149,7 +149,7 @@ const App: React.FC = () => {
       }
     }
 
-    if (activeWindow && hands.length === 2 && hands.every(h => h.gesture === 'PINCH_DOWN' || h.gesture === 'PINCH_HELD')) {
+    if (activeWindow && hands.length === 2 && hands.every(h => h.gesture === 'TAP_DOWN' || h.gesture === 'TAP_HELD')) {
         const windowZ = -400;
         const handsAreNearWindow = hands.every(h => Math.abs(getHandZ(h) - windowZ) < 200);
         if (handsAreNearWindow) {
@@ -188,13 +188,15 @@ const App: React.FC = () => {
 
         if (handAndApp) {
             const { hand, app } = handAndApp;
-            const handZ = getHandZ(hand);
-            const appZ = getAppPositionZ(app!.id);
-            
-            if (Math.abs(handZ - appZ) < 150) { // Hover threshold
-                currentHover = app!.id;
-                if (handZ < appZ + 20) { // Press threshold (hand is "behind" the element)
-                    currentPressedId = app!.id;
+            if (hand.isPointing) {
+                const handZ = getHandZ(hand);
+                const appZ = getAppPositionZ(app!.id);
+                
+                if (Math.abs(handZ - appZ) < 150) { // Hover threshold
+                    currentHover = app!.id;
+                    if (handZ < appZ + 20) { // Press threshold (hand is "behind" the element)
+                        currentPressedId = app!.id;
+                    }
                 }
             }
         }
@@ -210,8 +212,8 @@ const App: React.FC = () => {
       const handZ = getHandZ(hand);
       let actionTaken = false;
 
-      if (hand.gesture === 'PINCH_DOWN') {
-        let pinchedElementIdForDrag: string | null = null;
+      if (hand.isPointing && hand.gesture === 'TAP_DOWN') {
+        let tappedElementIdForDrag: string | null = null;
         
         // Window interactions
         if (activeWindow && !isResizing && hands.length === 1) {
@@ -219,7 +221,7 @@ const App: React.FC = () => {
 
             if (isCursorOverElement(hand, windowDragHandleRef.current)) {
                 if (Math.abs(handZ - windowZ) < 150) { // Must be near the window plane to drag
-                    pinchedElementIdForDrag = `drag-${activeWindow.id}`;
+                    tappedElementIdForDrag = `drag-${activeWindow.id}`;
                     setIsDragging(true);
                     const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
                     const cursorY = hand.cursorPosition.y * window.innerHeight;
@@ -237,9 +239,9 @@ const App: React.FC = () => {
 
         // App Grid interactions
         if (!actionTaken && isAppGridVisible && !activeWindow && pressedAppId) {
-            const pinchedApp = apps.find(app => app.id === pressedAppId && isCursorOverElement(hand, appRefs.current.get(app.id) || null));
-            if(pinchedApp) {
-                openApp(pinchedApp.id);
+            const tappedApp = apps.find(app => app.id === pressedAppId && isCursorOverElement(hand, appRefs.current.get(app.id) || null));
+            if(tappedApp) {
+                openApp(tappedApp.id);
                 actionTaken = true;
             }
         }
@@ -262,16 +264,16 @@ const App: React.FC = () => {
             }
         }
         
-        pinchStartRef.current[hand.id] = pinchedElementIdForDrag;
+        tapStartRef.current[hand.id] = tappedElementIdForDrag;
 
-      } else if (hand.gesture === 'PINCH_UP') {
-        const releasedElementId = pinchStartRef.current[hand.id];
+      } else if (hand.gesture === 'TAP_UP') {
+        const releasedElementId = tapStartRef.current[hand.id];
         
         if (releasedElementId?.startsWith('drag-')) {
           setIsDragging(false);
         }
         
-        pinchStartRef.current[hand.id] = null;
+        tapStartRef.current[hand.id] = null;
       }
     });
 

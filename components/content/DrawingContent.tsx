@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { HandData } from '../../hooks/useHandTracking';
 
@@ -57,14 +56,17 @@ export const DrawingContent: React.FC<DrawingContentProps> = ({ hands = [], wind
                 const canvasX = cursorX - rect.left;
                 const canvasY = cursorY - rect.top;
 
-                if (hand.gesture === 'PINCH_DOWN') {
+                // FIX: Replaced deprecated 'PINCH_DOWN' gesture with 'TAP_DOWN' to match Gesture type.
+                if (hand.gesture === 'TAP_DOWN') {
                     context.beginPath();
                     context.moveTo(canvasX, canvasY);
                     drawingStates.current.set(hand.id, true);
-                } else if (hand.gesture === 'PINCH_HELD' && drawingStates.current.get(hand.id)) {
+                // FIX: Replaced deprecated 'PINCH_HELD' gesture with 'TAP_HELD' to match Gesture type.
+                } else if (hand.gesture === 'TAP_HELD' && drawingStates.current.get(hand.id)) {
                     context.lineTo(canvasX, canvasY);
                     context.stroke();
-                } else if (hand.gesture === 'PINCH_UP' || hand.gesture === 'OPEN') {
+                // FIX: Replaced deprecated 'PINCH_UP' gesture with 'TAP_UP' to match Gesture type.
+                } else if (hand.gesture === 'TAP_UP' || hand.gesture === 'OPEN') {
                     if(drawingStates.current.get(hand.id)) {
                         context.closePath();
                         drawingStates.current.set(hand.id, false);

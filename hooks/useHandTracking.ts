@@ -7,12 +7,13 @@ import {
   NormalizedLandmark
 } from '@mediapipe/tasks-vision';
 
-export type Gesture = 'OPEN' | 'PINCH_DOWN' | 'PINCH_HELD' | 'PINCH_UP';
+export type Gesture = 'OPEN' | 'TAP_DOWN' | 'TAP_HELD' | 'TAP_UP';
 type MiddleIndexTapGesture = 'TAP_OPEN' | 'TAP_DOWN' | 'TAP_UP';
 
 export interface HandData {
   id: number;
   gesture: Gesture;
+  isPointing: boolean;
   pinchDistance: number;
   cursorPosition: { x: number; y: number };
   landmarks: NormalizedLandmark[];
@@ -34,7 +35,7 @@ let handLandmarker: HandLandmarker | undefined = undefined;
 let lastVideoTime = -1;
 let animationFrameId: number;
 
-const PINCH_THRESHOLD = 0.04;
+const TAP_THRESHOLD = 0.04;
 const RELEASE_THRESHOLD = 0.06;
 const MIDDLE_INDEX_TAP_THRESHOLD = 0.05;
 const MIDDLE_INDEX_RELEASE_THRESHOLD = 0.07;
@@ -60,7 +61,14 @@ export const useHandTracking = (
         const thumbTip = landmarks[4] as NormalizedLandmark;
         const middleTip = landmarks[12] as NormalizedLandmark;
 
-        // Pinch Gesture
+        // Pointing Gesture Detection
+        const isIndexExtended = landmarks[8].y < landmarks[6].y;
+        const isMiddleCurled = landmarks[12].y > landmarks[10].y;
+        const isRingCurled = landmarks[16].y > landmarks[14].y;
+        const isPinkyCurled = landmarks[20].y > landmarks[18].y;
+        const isPointing = isIndexExtended && isMiddleCurled && isRingCurled && isPinkyCurled;
+
+        // Tap (formerly Pinch) Gesture
         const distance = Math.sqrt(
           Math.pow(indexTip.x - thumbTip.x, 2) +
           Math.pow(indexTip.y - thumbTip.y, 2) +
@@ -74,14 +82,14 @@ export const useHandTracking = (
         };
         
         let newGesture: Gesture = prevState.gesture;
-        const isCurrentlyPinched = distance < PINCH_THRESHOLD;
+        const isCurrentlyTapped = distance < TAP_THRESHOLD;
         const isCurrentlyReleased = distance > RELEASE_THRESHOLD;
 
         switch(prevState.gesture) {
-            case 'OPEN': if (isCurrentlyPinched) newGesture = 'PINCH_DOWN'; break;
-            case 'PINCH_UP': if (isCurrentlyPinched) newGesture = 'PINCH_DOWN'; else newGesture = 'OPEN'; break;
-            case 'PINCH_DOWN': if (isCurrentlyReleased) newGesture = 'PINCH_UP'; else newGesture = 'PINCH_HELD'; break;
-            case 'PINCH_HELD': if (isCurrentlyReleased) newGesture = 'PINCH_UP'; break;
+            case 'OPEN': if (isCurrentlyTapped) newGesture = 'TAP_DOWN'; break;
+            case 'TAP_UP': if (isCurrentlyTapped) newGesture = 'TAP_DOWN'; else newGesture = 'OPEN'; break;
+            case 'TAP_DOWN': if (isCurrentlyReleased) newGesture = 'TAP_UP'; else newGesture = 'TAP_HELD'; break;
+            case 'TAP_HELD': if (isCurrentlyReleased) newGesture = 'TAP_UP'; break;
         }
 
         // Double Tap Gesture
@@ -93,12 +101,12 @@ export const useHandTracking = (
         let doubleTapEvent = false;
         const prevTState = prevTapState.current.get(i) || { gesture: 'TAP_OPEN', lastTapTime: 0, tapCount: 0 };
         let newTapGesture: MiddleIndexTapGesture = prevTState.gesture;
-        const isCurrentlyTapped = tapDistance < MIDDLE_INDEX_TAP_THRESHOLD;
+        const isCurrentlyDoubleTapped = tapDistance < MIDDLE_INDEX_TAP_THRESHOLD;
         const isCurrentlyTapReleased = tapDistance > MIDDLE_INDEX_RELEASE_THRESHOLD;
 
         switch(prevTState.gesture) {
-            case 'TAP_OPEN': if(isCurrentlyTapped) newTapGesture = 'TAP_DOWN'; break;
-            case 'TAP_UP': if(isCurrentlyTapped) newTapGesture = 'TAP_DOWN'; else newTapGesture = 'TAP_OPEN'; break;
+            case 'TAP_OPEN': if(isCurrentlyDoubleTapped) newTapGesture = 'TAP_DOWN'; break;
+            case 'TAP_UP': if(isCurrentlyDoubleTapped) newTapGesture = 'TAP_DOWN'; else newTapGesture = 'TAP_OPEN'; break;
             case 'TAP_DOWN': if(isCurrentlyTapReleased) newTapGesture = 'TAP_UP'; break;
         }
 
@@ -129,6 +137,7 @@ export const useHandTracking = (
         const handData: HandData = {
           id: i,
           gesture: newGesture,
+          isPointing: isPointing,
           pinchDistance: distance,
           cursorPosition: smoothedPosition,
           landmarks: landmarks,
