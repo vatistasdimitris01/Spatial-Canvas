@@ -8,6 +8,7 @@ import {
 } from '@mediapipe/tasks-vision';
 
 export type Gesture = 'OPEN' | 'PINCH_DOWN' | 'PINCH_HELD' | 'PINCH_UP';
+type MiddleIndexTapGesture = 'TAP_OPEN' | 'TAP_DOWN' | 'TAP_UP';
 
 export interface HandData {
   id: number;
@@ -15,11 +16,18 @@ export interface HandData {
   pinchDistance: number;
   cursorPosition: { x: number; y: number };
   landmarks: NormalizedLandmark[];
+  middleIndexDoubleTap: boolean;
 }
 
 interface HandState {
     gesture: Gesture;
     smoothedPosition: { x: number; y: number };
+}
+
+interface TapState {
+    gesture: MiddleIndexTapGesture;
+    lastTapTime: number;
+    tapCount: number;
 }
 
 let handLandmarker: HandLandmarker | undefined = undefined;
@@ -28,6 +36,10 @@ let animationFrameId: number;
 
 const PINCH_THRESHOLD = 0.04;
 const RELEASE_THRESHOLD = 0.06;
+const MIDDLE_INDEX_TAP_THRESHOLD = 0.05;
+const MIDDLE_INDEX_RELEASE_THRESHOLD = 0.07;
+const DOUBLE_TAP_WINDOW_MS = 400;
+
 const LERP_FACTOR = 0.3; // Smoothing factor
 
 export const useHandTracking = (
@@ -37,6 +49,7 @@ export const useHandTracking = (
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const prevHandState = useRef<Map<number, HandState>>(new Map());
+  const prevTapState = useRef<Map<number, TapState>>(new Map());
 
   const processResults = (results: HandLandmarkerResult) => {
     const handsData: HandData[] = [];
@@ -45,7 +58,9 @@ export const useHandTracking = (
         const landmarks = results.landmarks[i];
         const indexTip = landmarks[8] as NormalizedLandmark;
         const thumbTip = landmarks[4] as NormalizedLandmark;
+        const middleTip = landmarks[12] as NormalizedLandmark;
 
+        // Pinch Gesture
         const distance = Math.sqrt(
           Math.pow(indexTip.x - thumbTip.x, 2) +
           Math.pow(indexTip.y - thumbTip.y, 2) +
@@ -53,34 +68,63 @@ export const useHandTracking = (
         );
         
         const prevState = prevHandState.current.get(i) || { gesture: 'OPEN', smoothedPosition: { x: indexTip.x, y: indexTip.y } };
-
-        // Cursor Smoothing (Lerp)
         const smoothedPosition = {
             x: prevState.smoothedPosition.x + (indexTip.x - prevState.smoothedPosition.x) * LERP_FACTOR,
             y: prevState.smoothedPosition.y + (indexTip.y - prevState.smoothedPosition.y) * LERP_FACTOR,
         };
         
-        // Gesture State Machine with Hysteresis
         let newGesture: Gesture = prevState.gesture;
         const isCurrentlyPinched = distance < PINCH_THRESHOLD;
         const isCurrentlyReleased = distance > RELEASE_THRESHOLD;
 
         switch(prevState.gesture) {
-            case 'OPEN':
-                if (isCurrentlyPinched) newGesture = 'PINCH_DOWN';
-                break;
-            case 'PINCH_UP':
-                if (isCurrentlyPinched) newGesture = 'PINCH_DOWN';
-                else newGesture = 'OPEN';
-                break;
-            case 'PINCH_DOWN':
-                if (isCurrentlyReleased) newGesture = 'PINCH_UP';
-                else newGesture = 'PINCH_HELD';
-                break;
-            case 'PINCH_HELD':
-                if (isCurrentlyReleased) newGesture = 'PINCH_UP';
-                break;
+            case 'OPEN': if (isCurrentlyPinched) newGesture = 'PINCH_DOWN'; break;
+            case 'PINCH_UP': if (isCurrentlyPinched) newGesture = 'PINCH_DOWN'; else newGesture = 'OPEN'; break;
+            case 'PINCH_DOWN': if (isCurrentlyReleased) newGesture = 'PINCH_UP'; else newGesture = 'PINCH_HELD'; break;
+            case 'PINCH_HELD': if (isCurrentlyReleased) newGesture = 'PINCH_UP'; break;
         }
+
+        // Double Tap Gesture
+        const tapDistance = Math.sqrt(
+            Math.pow(indexTip.x - middleTip.x, 2) +
+            Math.pow(indexTip.y - middleTip.y, 2) +
+            Math.pow((indexTip.z || 0) - (middleTip.z || 0), 2)
+        );
+        let doubleTapEvent = false;
+        const prevTState = prevTapState.current.get(i) || { gesture: 'TAP_OPEN', lastTapTime: 0, tapCount: 0 };
+        let newTapGesture: MiddleIndexTapGesture = prevTState.gesture;
+        const isCurrentlyTapped = tapDistance < MIDDLE_INDEX_TAP_THRESHOLD;
+        const isCurrentlyTapReleased = tapDistance > MIDDLE_INDEX_RELEASE_THRESHOLD;
+
+        switch(prevTState.gesture) {
+            case 'TAP_OPEN': if(isCurrentlyTapped) newTapGesture = 'TAP_DOWN'; break;
+            case 'TAP_UP': if(isCurrentlyTapped) newTapGesture = 'TAP_DOWN'; else newTapGesture = 'TAP_OPEN'; break;
+            case 'TAP_DOWN': if(isCurrentlyTapReleased) newTapGesture = 'TAP_UP'; break;
+        }
+
+        let newTapCount = prevTState.tapCount;
+        let newLastTapTime = prevTState.lastTapTime;
+
+        if (newTapGesture === 'TAP_UP' && prevTState.gesture === 'TAP_DOWN') {
+            const now = Date.now();
+            if (now - prevTState.lastTapTime < DOUBLE_TAP_WINDOW_MS) {
+                newTapCount++;
+            } else {
+                newTapCount = 1;
+            }
+            newLastTapTime = now;
+
+            if (newTapCount >= 2) {
+                doubleTapEvent = true;
+                newTapCount = 0;
+            }
+        }
+        
+        if (Date.now() - newLastTapTime > DOUBLE_TAP_WINDOW_MS) {
+            newTapCount = 0;
+        }
+        
+        prevTapState.current.set(i, { gesture: newTapGesture, tapCount: newTapCount, lastTapTime: newLastTapTime });
 
         const handData: HandData = {
           id: i,
@@ -88,6 +132,7 @@ export const useHandTracking = (
           pinchDistance: distance,
           cursorPosition: smoothedPosition,
           landmarks: landmarks,
+          middleIndexDoubleTap: doubleTapEvent,
         };
         handsData.push(handData);
         prevHandState.current.set(i, { gesture: newGesture, smoothedPosition });

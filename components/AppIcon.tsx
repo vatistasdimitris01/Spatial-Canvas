@@ -10,17 +10,30 @@ interface AppIconProps {
 
 export const AppIcon: React.FC<AppIconProps> = ({ label, icon, isHovered, isPressed }) => {
   return (
-    <div className="flex flex-col items-center gap-2 w-24 text-center select-none">
+    <div className="flex flex-col items-center gap-4 w-28 text-center select-none group">
       <div
-        className="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 ease-out cursor-pointer"
+        className="relative w-24 h-24 transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)]"
         style={{
-          transform: `scale(${isPressed ? 0.9 : isHovered ? 1.15 : 1}) translateY(${isHovered ? '-4px' : '0px'})`,
-          filter: isHovered ? 'drop-shadow(0 10px 15px rgba(0, 0, 0, 0.3))' : 'none',
+          transformStyle: 'preserve-3d',
+          transform: `scale(${isPressed ? 0.95 : isHovered ? 1.15 : 1}) translateZ(${isPressed ? '-20px' : '0px'})`,
         }}
       >
-        {icon}
+        {/* Subtle glow effect on hover */}
+        <div className={`absolute inset-0 bg-white/40 rounded-full blur-xl transition-opacity duration-300 ${isHovered && !isPressed ? 'opacity-100' : 'opacity-0'}`}></div>
+
+        {/* Glass container */}
+        <div className={`absolute inset-0 rounded-full backdrop-blur-lg border border-white/10 flex items-center justify-center overflow-hidden shadow-lg transition-colors duration-200 ${isPressed ? 'bg-black/30' : 'bg-black/10'}`}>
+           <div className="scale-[0.6]">
+            {icon}
+           </div>
+        </div>
       </div>
-      <span className="text-white text-xs font-medium transition-opacity duration-200" style={{ opacity: isHovered ? 1 : 0.8 }}>{label}</span>
+      <span 
+        className="text-white text-sm font-medium transition-opacity duration-300" 
+        style={{ opacity: isHovered ? 1 : 0.8, transform: isHovered ? 'translateY(5px)' : 'translateY(0)' }}
+      >
+        {label}
+      </span>
     </div>
   );
 };

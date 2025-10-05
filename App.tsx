@@ -8,10 +8,11 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { AppGrid } from './components/AppGrid';
 import { Window } from './components/Window';
 import { BottomDock } from './components/BottomDock';
-import { ActiveWindow, Photo } from './types';
+import { ActiveWindow, Photo, DisplayMode } from './types';
 import { getApps } from './apps';
 
-const DOCK_HIDE_TIMEOUT = 4000; // 4 seconds
+const DOCK_ACTIVITY_TIMEOUT = 4000; // 4 seconds
+const DWELL_CLICK_DURATION = 3000; // 3 seconds
 
 const isCursorOverElement = (hand: HandData, element: HTMLElement | null): boolean => {
   if (!element) return false;
@@ -31,9 +32,11 @@ const App: React.FC = () => {
   const resizeStartRef = useRef<{ distance: number; width: number; height: number} | null>(null);
   const appRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const dockRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
+
+  const windowRef = useRef<HTMLDivElement>(null);
   const windowDragHandleRef = useRef<HTMLDivElement>(null);
   const windowCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const dockHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dockActivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hands, setHands] = useState<HandData[]>([]);
   const [activeWindow, setActiveWindow] = useState<ActiveWindow | null>(null);
@@ -41,13 +44,16 @@ const App: React.FC = () => {
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hoveredAppId, setHoveredAppId] = useState<string | null>(null);
+  const [pressedAppId, setPressedAppId] = useState<string | null>(null);
   const [isAppGridVisible, setIsAppGridVisible] = useState(true);
-  const [isVrMode, setIsVrMode] = useState(true); // VR mode is now default
-  const [isDockCollapsed, setIsDockCollapsed] = useState(false);
+  const [isDockActive, setIsDockActive] = useState(true);
+  const [isWindowHovered, setIsWindowHovered] = useState(false);
+  const [isTakingPhoto, setIsTakingPhoto] = useState(false);
+  const [dwellState, setDwellState] = useState<{ targetId: string | null; startTime: number | null }>({ targetId: null, startTime: null });
   
   const [photos, setPhotos] = useState<Photo[]>([]);
 
-  const { videoStream, cameraError, facingMode, toggleFacingMode, zoom, toggleZoom } = useCamera();
+  const { videoStream, cameraError, facingMode, toggleFacingMode } = useCamera();
   const { worldTransform, recenter } = useHeadTracking();
 
   const takePhoto = useCallback(() => {
@@ -67,17 +73,12 @@ const App: React.FC = () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg');
     setPhotos(prev => [...prev, { id: `photo_${Date.now()}`, src: dataUrl }]);
-    // Briefly show feedback? Maybe open photos app? For now, just add it.
+    
+    setIsTakingPhoto(true);
+    setTimeout(() => setIsTakingPhoto(false), 300);
   }, [videoRef, facingMode]);
   
-  const apps = getApps({ 
-    closeWindow: () => setActiveWindow(null),
-    photos,
-    takePhoto,
-    toggleVrMode: () => setIsVrMode(v => !v),
-    recenterView: recenter,
-    isVrMode,
-  });
+  const apps = getApps({ photos });
 
   useEffect(() => {
     if (videoRef.current && videoStream) {
@@ -85,22 +86,22 @@ const App: React.FC = () => {
     }
   }, [videoStream]);
 
-  const resetDockTimer = useCallback(() => {
-    if (dockHideTimer.current) {
-        clearTimeout(dockHideTimer.current);
+  const activateDock = useCallback(() => {
+    if (dockActivityTimer.current) {
+        clearTimeout(dockActivityTimer.current);
     }
-    setIsDockCollapsed(false);
-    dockHideTimer.current = setTimeout(() => {
-        setIsDockCollapsed(true);
-    }, DOCK_HIDE_TIMEOUT);
+    setIsDockActive(true);
+    dockActivityTimer.current = setTimeout(() => {
+        setIsDockActive(false);
+    }, DOCK_ACTIVITY_TIMEOUT);
   }, []);
 
   const handleHandData = useCallback((handData: HandData[]) => {
     setHands(handData);
     if(handData.length > 0) {
-        resetDockTimer();
+        activateDock();
     }
-  }, [resetDockTimer]);
+  }, [activateDock]);
 
   const { isLoading: isTrackerLoading, error: trackerError } = useHandTracking(videoRef, handleHandData);
   
@@ -154,22 +155,52 @@ const App: React.FC = () => {
     }
 
     let currentHover: string | null = null;
-    hands.forEach(hand => {
-      if (isAppGridVisible && !activeWindow) {
-        apps.forEach(app => {
-          if (isCursorOverElement(hand, appRefs.current.get(app.id) || null)) {
-            currentHover = app.id;
-          }
-        });
+    let isHandOverWindow = false;
+
+    if (activeWindow) {
+        if (hands.some(hand => isCursorOverElement(hand, windowRef.current))) {
+            isHandOverWindow = true;
+        }
+    }
+    setIsWindowHovered(isHandOverWindow);
+
+    let currentPressedId: string | null = null;
+    if (isAppGridVisible && !activeWindow) {
+        const pinchingHand = hands.find(h => h.gesture === 'PINCH_HELD' || h.gesture === 'PINCH_DOWN');
+        if (pinchingHand) {
+            const app = apps.find(app => isCursorOverElement(pinchingHand, appRefs.current.get(app.id) || null));
+            if (app) {
+                currentPressedId = app.id;
+            }
+        }
+    }
+    setPressedAppId(currentPressedId);
+
+
+    if (isAppGridVisible && !activeWindow) {
+      const currentlyHoveredApp = apps.find(app => hands.some(hand => isCursorOverElement(hand, appRefs.current.get(app.id) || null)));
+      currentHover = currentlyHoveredApp ? currentlyHoveredApp.id : null;
+
+      if (currentHover && currentHover !== dwellState.targetId) {
+          setDwellState({ targetId: currentHover, startTime: Date.now() });
+      } else if (!currentHover && dwellState.targetId) {
+          setDwellState({ targetId: null, startTime: null });
       }
-      
-      // Dock hover logic (can be expanded if needed)
-      const dockButtons = ['grid', 'camera', 'zoom', 'recenter'];
-      dockButtons.forEach(id => {
-          if (isCursorOverElement(hand, dockRefs.current.get(id) || null)) {
-            // Can add hover state for dock buttons if needed
-          }
-      });
+    } else if (dwellState.targetId) {
+        setDwellState({ targetId: null, startTime: null });
+    }
+    
+    if (dwellState.targetId && dwellState.startTime) {
+        if (Date.now() - dwellState.startTime >= DWELL_CLICK_DURATION) {
+            openApp(dwellState.targetId);
+            setDwellState({ targetId: null, startTime: null }); // Reset after click
+        }
+    }
+
+    hands.forEach(hand => {
+      if(hand.middleIndexDoubleTap) {
+        takePhoto();
+      }
 
       if (hand.gesture === 'PINCH_DOWN') {
         let pinchedElementIdForDrag: string | null = null;
@@ -178,7 +209,6 @@ const App: React.FC = () => {
         // Window interactions
         if (activeWindow && !isResizing && hands.length === 1) {
             if (isCursorOverElement(hand, windowDragHandleRef.current)) {
-                // Start dragging
                 pinchedElementIdForDrag = `drag-${activeWindow.id}`;
                 setIsDragging(true);
                 const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
@@ -186,17 +216,18 @@ const App: React.FC = () => {
                 setDragOffset({ x: cursorX - activeWindow.position.x, y: cursorY - activeWindow.position.y });
                 actionTaken = true;
             } else if (isCursorOverElement(hand, windowCloseButtonRef.current)) {
-                // Close window immediately
                 setActiveWindow(null);
+                setIsAppGridVisible(true);
                 actionTaken = true;
             }
         }
 
-        // App Grid interactions
+        // App Grid interactions (only for non-dwell clicking)
         if (!actionTaken && isAppGridVisible && !activeWindow) {
             const pinchedApp = apps.find(app => isCursorOverElement(hand, appRefs.current.get(app.id) || null));
             if (pinchedApp) {
                 openApp(pinchedApp.id);
+                setDwellState({ targetId: null, startTime: null }); // Cancel dwell on pinch
                 actionTaken = true;
             }
         }
@@ -205,10 +236,11 @@ const App: React.FC = () => {
         if (!actionTaken) {
             if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) {
                 setIsAppGridVisible(v => !v);
+                if (activeWindow) {
+                    setActiveWindow(null);
+                }
             } else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) {
                 toggleFacingMode();
-            } else if (isCursorOverElement(hand, dockRefs.current.get('zoom') || null)) {
-                toggleZoom();
             } else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) {
                 recenter();
             }
@@ -219,18 +251,16 @@ const App: React.FC = () => {
       } else if (hand.gesture === 'PINCH_UP') {
         const releasedElementId = pinchStartRef.current[hand.id];
         
-        // Only thing to do on PINCH_UP is stop dragging
         if (releasedElementId?.startsWith('drag-')) {
           setIsDragging(false);
         }
         
-        // Always clear the ref for this hand on release
         pinchStartRef.current[hand.id] = null;
       }
     });
     setHoveredAppId(currentHover);
-  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, toggleZoom]);
-
+  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, dwellState.targetId, takePhoto]);
+  
   const renderContent = () => {
     if (isTrackerLoading) {
       return (
@@ -251,25 +281,24 @@ const App: React.FC = () => {
         </div>
       );
     }
-
-    const pinchingHand = hands.find(h => h.gesture === 'PINCH_DOWN' || h.gesture === 'PINCH_HELD');
-    const pressedAppId = pinchingHand && pinchStartRef.current[pinchingHand.id]?.startsWith('app-')
-      ? pinchStartRef.current[pinchingHand.id]?.substring(4)
-      : null;
-
+    
+    const dwellProgress = dwellState.targetId === hoveredAppId && dwellState.startTime
+      ? Math.min(1, (Date.now() - dwellState.startTime) / DWELL_CLICK_DURATION)
+      : 0;
 
     return (
       <>
         <BottomDock 
           isGridVisible={isAppGridVisible}
-          onToggleGrid={() => setIsAppGridVisible(v => !v)}
+          onToggleGrid={() => {
+            setIsAppGridVisible(v => !v);
+            if(activeWindow) setActiveWindow(null);
+          }}
           onToggleCamera={toggleFacingMode}
-          zoomLevel={zoom}
-          onToggleZoom={toggleZoom}
           onRecenter={recenter}
           dockRefs={dockRefs}
-          isCollapsed={isDockCollapsed}
-          onExpand={() => resetDockTimer()}
+          isActive={isDockActive}
+          onMouseEnter={activateDock}
         />
         
         <AppGrid 
@@ -282,20 +311,28 @@ const App: React.FC = () => {
 
         {activeWindow && (
           <Window
+            windowRef={windowRef}
             title={activeWindow.title}
             position={activeWindow.position}
             size={activeWindow.size}
             onClose={() => {
               setActiveWindow(null);
+              setIsAppGridVisible(true);
             }}
             dragHandleRef={windowDragHandleRef}
             closeButtonRef={windowCloseButtonRef}
             isResizing={isResizing}
+            isHovered={isWindowHovered}
           >
-            {activeWindow.content}
+            {
+              React.createElement(
+                activeWindow.content,
+                activeWindow.id === 'draw' ? { hands, windowRef } : undefined
+              )
+            }
           </Window>
         )}
-        <HandRenderer hands={hands} />
+        <HandRenderer hands={hands} dwellProgress={dwellProgress} />
         {hands.length === 0 && !activeWindow && isAppGridVisible &&(
             <div className="absolute bottom-24 w-full text-center p-4 z-20" style={{ transform: 'translateZ(200px)'}}>
                 <p className="text-lg text-white bg-black/40 backdrop-blur-xl rounded-full px-8 py-4 inline-block shadow-lg border border-white/20">
@@ -328,19 +365,16 @@ const App: React.FC = () => {
         muted
         style={{ transform: `scaleX(${facingMode === 'user' ? -1 : 1})` }}
       />
-      {isVrMode ? (
-        <div className="vr-container absolute inset-0">
-          <div className="left-eye">
-            <div className="eye-content">{renderUI()}</div>
-          </div>
-          <div className="vr-divider" />
-          <div className="right-eye">
-            <div className="eye-content">{renderUI()}</div>
-          </div>
+      {isTakingPhoto && <div className="absolute inset-0 bg-white z-50 animate-photo-flash pointer-events-none"></div>}
+      <div className="vr-container absolute inset-0">
+        <div className="left-eye">
+          <div className="eye-content">{renderUI()}</div>
         </div>
-      ) : (
-        renderUI()
-      )}
+        <div className="vr-divider" />
+        <div className="right-eye">
+          <div className="eye-content">{renderUI()}</div>
+        </div>
+      </div>
     </main>
   );
 };

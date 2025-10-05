@@ -5,6 +5,14 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spatial Canvas</title>
+    
+    <!-- PWA Tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Spatial Canvas" />
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,10 +77,48 @@
   .right-eye .eye-content {
     transform: translateX(1.5%);
   }
+
+  /* Added for pinch animation */
+  @keyframes pinch-pulse {
+    0% {
+      transform: scale(0.5);
+      opacity: 1;
+      stroke-width: 4px;
+    }
+    100% {
+      transform: scale(4);
+      opacity: 0;
+      stroke-width: 1px;
+    }
+  }
+  .animate-pinch-pulse {
+    transform-origin: center;
+    animation: pinch-pulse 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+
+  /* Added for photo flash animation */
+  @keyframes photo-flash {
+    0% { opacity: 0.8; }
+    100% { opacity: 0; }
+  }
+  .animate-photo-flash {
+      animation: photo-flash 0.3s ease-out forwards;
+  }
 </style>
 </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+          }, err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

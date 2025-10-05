@@ -1,17 +1,19 @@
 
 import type React from 'react';
 
+export type DisplayMode = 'AR' | 'VR' | 'MR';
+
 export interface AppDefinition {
   id: string;
   label: string;
   icon: React.ReactNode;
-  content: React.ReactNode;
+  content: React.ComponentType<any>;
 }
 
 export interface ActiveWindow {
   id: string;
   title: string;
-  content: React.ReactNode;
+  content: React.ComponentType<any>;
   position: { x: number; y: number };
   size: { width: number, height: number };
 }

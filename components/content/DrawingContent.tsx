@@ -1,25 +1,36 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { useHandTracking } from '../../hooks/useHandTracking';
+import { HandData } from '../../hooks/useHandTracking';
 
-export const DrawingContent: React.FC = () => {
+interface DrawingContentProps {
+    hands?: HandData[];
+    windowRef?: React.RefObject<HTMLDivElement>;
+}
+
+export const DrawingContent: React.FC<DrawingContentProps> = ({ hands = [], windowRef }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-    const [isDrawing, setIsDrawing] = useState(false);
     const [color, setColor] = useState('#FFFFFF');
+    const drawingStates = useRef<Map<number, boolean>>(new Map());
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        canvas.width = canvas.offsetWidth * 2; // High DPI
-        canvas.height = canvas.offsetHeight * 2;
-        const context = canvas.getContext('2d');
-        if (!context) return;
-        context.scale(2, 2);
-        context.lineCap = 'round';
-        context.strokeStyle = color;
-        context.lineWidth = 5;
-        contextRef.current = context;
+        const resizeCanvas = () => {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.offsetWidth * dpr;
+            canvas.height = canvas.offsetHeight * dpr;
+            const context = canvas.getContext('2d');
+            if (!context) return;
+            context.scale(dpr, dpr);
+            context.lineCap = 'round';
+            context.strokeStyle = color;
+            context.lineWidth = 5;
+            contextRef.current = context;
+        };
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        return () => window.removeEventListener('resize', resizeCanvas);
     }, []);
     
     useEffect(() => {
@@ -28,26 +39,46 @@ export const DrawingContent: React.FC = () => {
         }
     }, [color]);
 
-    const startDrawing = ({ nativeEvent }: React.MouseEvent<HTMLCanvasElement>) => {
-        const { offsetX, offsetY } = nativeEvent;
-        contextRef.current?.beginPath();
-        contextRef.current?.moveTo(offsetX, offsetY);
-        setIsDrawing(true);
-    };
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const context = contextRef.current;
+        const windowEl = windowRef?.current;
+        if (!canvas || !context || !windowEl) return;
 
-    const finishDrawing = () => {
-        contextRef.current?.closePath();
-        setIsDrawing(false);
-    };
+        const rect = canvas.getBoundingClientRect();
 
-    const draw = ({ nativeEvent }: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!isDrawing) {
-            return;
-        }
-        const { offsetX, offsetY } = nativeEvent;
-        contextRef.current?.lineTo(offsetX, offsetY);
-        contextRef.current?.stroke();
-    };
+        hands.forEach(hand => {
+            const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
+            const cursorY = hand.cursorPosition.y * window.innerHeight;
+            
+            const isOverCanvas = cursorX >= rect.left && cursorX <= rect.right && cursorY >= rect.top && cursorY <= rect.bottom;
+
+            if (isOverCanvas) {
+                const canvasX = cursorX - rect.left;
+                const canvasY = cursorY - rect.top;
+
+                if (hand.gesture === 'PINCH_DOWN') {
+                    context.beginPath();
+                    context.moveTo(canvasX, canvasY);
+                    drawingStates.current.set(hand.id, true);
+                } else if (hand.gesture === 'PINCH_HELD' && drawingStates.current.get(hand.id)) {
+                    context.lineTo(canvasX, canvasY);
+                    context.stroke();
+                } else if (hand.gesture === 'PINCH_UP' || hand.gesture === 'OPEN') {
+                    if(drawingStates.current.get(hand.id)) {
+                        context.closePath();
+                        drawingStates.current.set(hand.id, false);
+                    }
+                }
+            } else {
+                 if(drawingStates.current.get(hand.id)) {
+                    context.closePath();
+                    drawingStates.current.set(hand.id, false);
+                }
+            }
+        });
+
+    }, [hands, windowRef, color]);
 
     const clearCanvas = () => {
         const canvas = canvasRef.current;
@@ -75,11 +106,7 @@ export const DrawingContent: React.FC = () => {
             </div>
              <canvas
                 ref={canvasRef}
-                onMouseDown={startDrawing}
-                onMouseUp={finishDrawing}
-                onMouseMove={draw}
-                onMouseLeave={finishDrawing}
-                className="w-full h-full bg-black/30 rounded-lg cursor-crosshair"
+                className="w-full h-full bg-black/30 rounded-lg"
             />
         </div>
     );

@@ -1,109 +1,125 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { HandData } from '../hooks/useHandTracking';
-import { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
-const HAND_CONNECTIONS: number[][] = [
-    [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
-    [0, 5], [5, 6], [6, 7], [7, 8], // Index
-    [5, 9],
-    [9, 10], [10, 11], [11, 12], // Middle
-    [9, 13],
-    [13, 14], [14, 15], [15, 16], // Ring
-    [13, 17],
-    [0, 17],
-    [17, 18], [18, 19], [19, 20] // Pinky
-];
+const CURSOR_RADIUS = 10;
+const PINCH_EFFECT_RADIUS = 15;
 
-const Z_SCALE_FACTOR = 4;
-const BASE_RADIUS = 3;
-const BASE_STROKE_WIDTH = 2.5;
+const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+    const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+    return {
+        x: centerX + radius * Math.cos(angleInRadians),
+        y: centerY + radius * Math.sin(angleInRadians),
+    };
+};
 
-interface HandSkeletonProps {
-  landmarks: NormalizedLandmark[];
-  gesture: HandData['gesture'];
+const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number): string => {
+    if (endAngle >= 359.99) endAngle = 359.99;
+    const start = polarToCartesian(x, y, radius, endAngle);
+    const end = polarToCartesian(x, y, radius, startAngle);
+    const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+};
+
+interface HandCursorProps {
+    hand: HandData;
+    dwellProgress?: number;
 }
 
-const HandSkeleton: React.FC<HandSkeletonProps> = ({ landmarks, gesture }) => {
-  if (!landmarks || landmarks.length === 0) {
-    return null;
-  }
+const HandCursor: React.FC<HandCursorProps> = ({ hand, dwellProgress = 0 }) => {
+    const [pinchEvents, setPinchEvents] = useState<{ x: number, y: number, id: number }[]>([]);
 
-  const landmarkPoints = landmarks.map(lm => ({
-    x: (1 - lm.x) * window.innerWidth,
-    y: lm.y * window.innerHeight,
-    z: lm.z,
-  }));
-  
-  const isPinched = gesture === 'PINCH_HELD' || gesture === 'PINCH_DOWN';
+    useEffect(() => {
+        if (hand.gesture === 'PINCH_DOWN') {
+            const indexTip = hand.landmarks[8];
+            const thumbTip = hand.landmarks[4];
+            const pinchX = (1 - (indexTip.x + thumbTip.x) / 2) * window.innerWidth;
+            const pinchY = ((indexTip.y + thumbTip.y) / 2) * window.innerHeight;
 
-  return (
-    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ zIndex: 100 }}>
-      <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-            <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-            </feMerge>
-        </filter>
-      </defs>
-      <g style={{ filter: isPinched ? 'url(#glow)' : 'none', transition: 'filter 0.2s ease-out' }}>
-        {HAND_CONNECTIONS.map(([startIdx, endIdx], i) => {
-          const start = landmarkPoints[startIdx];
-          const end = landmarkPoints[endIdx];
-          if (!start || !end) return null;
-          
-          const avgZ = ((start.z || 0) + (end.z || 0)) / 2;
-          const strokeWidth = Math.max(1, BASE_STROKE_WIDTH * (1 - avgZ * Z_SCALE_FACTOR));
-          const opacity = isPinched ? 1 : 0.8;
+            setPinchEvents(prev => [...prev, { x: pinchX, y: pinchY, id: Date.now() }]);
+        }
+    }, [hand.gesture, hand.landmarks]);
 
-          return (
-            <line
-              key={`line-${i}`}
-              x1={start.x}
-              y1={start.y}
-              x2={end.x}
-              y2={end.y}
-              stroke={`rgba(255, 255, 255, ${opacity})`}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              style={{ transition: 'stroke-opacity 0.2s ease-out' }}
-            />
-          );
-        })}
-        {landmarkPoints.map((lm, i) => {
-          const radius = Math.max(1, BASE_RADIUS * (1 - (lm.z || 0) * Z_SCALE_FACTOR));
-          const isPinchPoint = isPinched && (i === 4 || i === 8);
-          const finalRadius = isPinchPoint ? radius * 1.5 : radius;
-          const opacity = isPinched ? 1 : 0.9;
-          
-          return (
-            <circle
-              key={`point-${i}`}
-              cx={lm.x}
-              cy={lm.y}
-              r={finalRadius}
-              fill={`rgba(255, 255, 255, ${opacity})`}
-              style={{ transition: 'r 0.2s ease-out, fill-opacity 0.2s ease-out' }}
-            />
-          );
-        })}
-      </g>
-    </svg>
-  );
+    const handleAnimationEnd = (id: number) => {
+        setPinchEvents(prev => prev.filter(p => p.id !== id));
+    };
+    
+    if (!hand.landmarks || hand.landmarks.length === 0) {
+        return null;
+    }
+    
+    const indexTip = hand.landmarks[8];
+    const isPinched = hand.gesture === 'PINCH_HELD' || hand.gesture === 'PINCH_DOWN';
+
+    const cursorX = (1 - indexTip.x) * window.innerWidth;
+    const cursorY = indexTip.y * window.innerHeight;
+    const cursorZ = indexTip.z || 0;
+    
+    const scale = 1 - cursorZ * 4;
+    const finalRadius = CURSOR_RADIUS * scale;
+
+    const loaderPath = dwellProgress > 0 && dwellProgress < 1
+        ? describeArc(0, 0, finalRadius + 5, 0, dwellProgress * 360)
+        : null;
+    
+    return (
+        <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ zIndex: 100 }}>
+            <defs>
+                <filter id="cursorGlow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                </filter>
+            </defs>
+            
+            {pinchEvents.map(p => (
+                <circle
+                    key={p.id}
+                    cx={p.x}
+                    cy={p.y}
+                    r={PINCH_EFFECT_RADIUS}
+                    fill="none"
+                    stroke="rgba(255, 255, 255, 0.9)"
+                    strokeWidth="3"
+                    className="animate-pinch-pulse"
+                    onAnimationEnd={() => handleAnimationEnd(p.id)}
+                />
+            ))}
+
+            <g style={{ transform: `translate(${cursorX}px, ${cursorY}px)` }}>
+                 {loaderPath && (
+                    <path
+                        d={loaderPath}
+                        fill="none"
+                        stroke="rgba(59, 130, 246, 0.9)"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                    />
+                )}
+                <circle
+                    r={finalRadius}
+                    fill="rgba(255, 255, 255, 0.3)"
+                    stroke="white"
+                    strokeWidth={isPinched ? 3 : 2}
+                    style={{ 
+                        transition: 'stroke-width 0.2s ease-out, r 0.1s linear',
+                        filter: isPinched ? 'url(#cursorGlow)' : 'none'
+                    }}
+                />
+            </g>
+        </svg>
+    );
 };
 
 
 interface HandRendererProps {
   hands: HandData[];
+  dwellProgress: number;
 }
 
-export const HandRenderer: React.FC<HandRendererProps> = ({ hands }) => {
+export const HandRenderer: React.FC<HandRendererProps> = ({ hands, dwellProgress }) => {
   return (
     <>
       {hands.map((hand) => (
-        <HandSkeleton key={hand.id} landmarks={hand.landmarks} gesture={hand.gesture} />
+        <HandCursor key={hand.id} hand={hand} dwellProgress={dwellProgress} />
       ))}
     </>
   );

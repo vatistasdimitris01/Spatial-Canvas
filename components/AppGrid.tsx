@@ -14,7 +14,7 @@ interface AppGridProps {
 export const AppGrid: React.FC<AppGridProps> = ({ apps, appRefs, hoveredAppId, pressedAppId, isVisible }) => {
   const numIcons = apps.length;
   const arc = { radius: 800, angle: 8 };
-  const horizontalSpacing = 20;
+  const horizontalSpacing = 40;
 
   return (
     <div 

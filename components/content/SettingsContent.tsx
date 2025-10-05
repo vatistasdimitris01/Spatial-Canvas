@@ -1,9 +1,10 @@
 
 import React from 'react';
+import { DisplayMode } from '../../types';
 
 interface SettingsContentProps {
-    isVrMode: boolean;
-    toggleVrMode: () => void;
+    displayMode: DisplayMode;
+    setDisplayMode: (mode: DisplayMode) => void;
     recenterView: () => void;
 }
 
@@ -14,19 +15,23 @@ const SettingsRow: React.FC<{ label: string, children: React.ReactNode }> = ({ l
     </div>
 );
 
-const Toggle: React.FC<{ checked: boolean; onChange: () => void }> = ({ checked, onChange }) => (
-    <button onClick={onChange} className={`relative inline-flex items-center h-8 w-14 rounded-full transition-colors duration-300 ease-in-out ${checked ? 'bg-blue-500' : 'bg-gray-600'}`}>
-        <span className={`inline-block w-6 h-6 transform bg-white rounded-full transition-transform duration-300 ease-in-out ${checked ? 'translate-x-7' : 'translate-x-1'}`}/>
-    </button>
-);
-
-export const SettingsContent: React.FC<SettingsContentProps> = ({ isVrMode, toggleVrMode, recenterView }) => {
+export const SettingsContent: React.FC<SettingsContentProps> = ({ displayMode, setDisplayMode, recenterView }) => {
   return (
     <div className="w-full h-full flex flex-col items-center text-white p-6 gap-4">
         <h3 className="text-2xl font-semibold mb-4">Settings</h3>
         
-        <SettingsRow label="VR Mode (Stereoscopic)">
-            <Toggle checked={isVrMode} onChange={toggleVrMode} />
+        <SettingsRow label="Display Mode">
+            <div className="flex items-center bg-white/10 rounded-lg p-1 space-x-1">
+                {(['AR', 'MR', 'VR'] as const).map(mode => (
+                    <button 
+                        key={mode} 
+                        onClick={() => setDisplayMode(mode)}
+                        className={`px-4 py-1 rounded-md text-sm font-semibold transition-colors duration-200 ${displayMode === mode ? 'bg-white text-black' : 'text-white hover:bg-white/20'}`}
+                    >
+                        {mode}
+                    </button>
+                ))}
+            </div>
         </SettingsRow>
         
         <SettingsRow label="View Orientation">
@@ -36,7 +41,7 @@ export const SettingsContent: React.FC<SettingsContentProps> = ({ isVrMode, togg
         </SettingsRow>
 
         <p className="text-sm text-white/60 mt-auto text-center">
-            VR Mode is best experienced with a mobile headset. Head tracking uses your device's orientation sensors.
+            Switch between AR, MR, and VR modes. VR is best experienced with a mobile headset.
         </p>
     </div>
   );
