@@ -15,7 +15,11 @@ export const AppIcon: React.FC<AppIconProps> = ({ label, icon, isHovered, isPres
         className="relative w-24 h-24 transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)]"
         style={{
           transformStyle: 'preserve-3d',
-          transform: `scale(${isPressed ? 0.95 : isHovered ? 1.15 : 1}) translateZ(${isPressed ? '-20px' : '0px'})`,
+          transform: `
+            scale(${isPressed ? 0.95 : isHovered ? 1.15 : 1}) 
+            translateZ(${isPressed ? '-20px' : isHovered ? '50px' : '0px'})
+            rotateX(${isHovered && !isPressed ? '-10deg' : '0deg'})
+          `,
         }}
       >
         {/* Subtle glow effect on hover */}

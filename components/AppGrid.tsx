@@ -9,16 +9,17 @@ interface AppGridProps {
   hoveredAppId: string | null;
   pressedAppId: string | null;
   isVisible: boolean;
+  isBlurred?: boolean;
 }
 
-export const AppGrid: React.FC<AppGridProps> = ({ apps, appRefs, hoveredAppId, pressedAppId, isVisible }) => {
+export const AppGrid: React.FC<AppGridProps> = ({ apps, appRefs, hoveredAppId, pressedAppId, isVisible, isBlurred }) => {
   const numIcons = apps.length;
   const arc = { radius: 800, angle: 8 };
   const horizontalSpacing = 40;
 
   return (
     <div 
-        className="absolute inset-0 z-10 flex items-center justify-center transition-opacity duration-500"
+        className={`absolute inset-0 z-10 flex items-center justify-center transition-all duration-500 ${isBlurred ? 'blur-md' : ''}`}
         style={{ 
             opacity: isVisible ? 1 : 0, 
             pointerEvents: isVisible ? 'auto' : 'none',

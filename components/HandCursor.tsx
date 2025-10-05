@@ -38,14 +38,18 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand }) => {
     const cursorY = indexTip.y * window.innerHeight;
     const cursorZ = indexTip.z || 0;
     
-    const scale = 1 - cursorZ * 4;
+    const scale = 1 + cursorZ * 4; // Scale becomes smaller as hand moves away
     const finalRadius = CURSOR_RADIUS * scale;
 
-    const Z_SCALING_FACTOR = -4000;
-    const UI_PLANE_Z = -700; // An arbitrary "zero point" for the UI
+    const Z_SCALING_FACTOR = 4000;
+    const UI_PLANE_Z = -600; // Aligned with the AppGrid's Z-position
     const handZ = (hand.landmarks[8]?.z || 0) * Z_SCALING_FACTOR;
-    const distance = handZ - UI_PLANE_Z; // distance in "pixels"
-    const distanceCm = (distance / 30).toFixed(0); // Arbitrary scaling to cm-like units
+    
+    // Distance from hand to the UI plane. Positive is in front, negative is behind.
+    const distance = handZ - UI_PLANE_Z; 
+    
+    // Convert pixel distance to a more readable "cm" unit for display
+    const distanceCm = (distance / 30).toFixed(0); 
     const distanceText = `${distance > 0 ? '+' : ''}${distanceCm} cm`;
     
     return (
@@ -91,6 +95,7 @@ const HandCursor: React.FC<HandCursorProps> = ({ hand }) => {
                     stroke="black"
                     strokeWidth="0.3"
                     paintOrder="stroke"
+                    style={{textShadow: '0 0 3px black'}}
                 >
                     {distanceText}
                 </text>

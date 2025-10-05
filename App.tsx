@@ -25,7 +25,8 @@ const getDistance = (p1: { x: number; y: number }, p2: { x: number; y: number })
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 };
 
-const Z_SCALING_FACTOR = -4000;
+// Use a positive scaling factor so that Z-coordinates align with CSS transforms (negative is further away).
+const Z_SCALING_FACTOR = 4000;
 const getHandZ = (hand: HandData) => (hand.landmarks[8]?.z || 0) * Z_SCALING_FACTOR;
 
 const App: React.FC = () => {
@@ -149,16 +150,20 @@ const App: React.FC = () => {
     }
 
     if (activeWindow && hands.length === 2 && hands.every(h => h.gesture === 'PINCH_DOWN' || h.gesture === 'PINCH_HELD')) {
-        if (!resizeStartRef.current) {
-            setIsResizing(true);
-            const distance = getDistance(hands[0].cursorPosition, hands[1].cursorPosition);
-            resizeStartRef.current = { distance, width: activeWindow.size.width, height: activeWindow.size.height };
-        } else {
-            const currentDistance = getDistance(hands[0].cursorPosition, hands[1].cursorPosition);
-            const scale = currentDistance / resizeStartRef.current.distance;
-            const newWidth = Math.max(300, resizeStartRef.current.width * scale);
-            const newHeight = Math.max(200, resizeStartRef.current.height * scale);
-            setActiveWindow(prev => prev ? { ...prev, size: { width: newWidth, height: newHeight } } : null);
+        const windowZ = -400;
+        const handsAreNearWindow = hands.every(h => Math.abs(getHandZ(h) - windowZ) < 200);
+        if (handsAreNearWindow) {
+            if (!resizeStartRef.current) {
+                setIsResizing(true);
+                const distance = getDistance(hands[0].cursorPosition, hands[1].cursorPosition);
+                resizeStartRef.current = { distance, width: activeWindow.size.width, height: activeWindow.size.height };
+            } else {
+                const currentDistance = getDistance(hands[0].cursorPosition, hands[1].cursorPosition);
+                const scale = currentDistance / resizeStartRef.current.distance;
+                const newWidth = Math.max(300, resizeStartRef.current.width * scale);
+                const newHeight = Math.max(200, resizeStartRef.current.height * scale);
+                setActiveWindow(prev => prev ? { ...prev, size: { width: newWidth, height: newHeight } } : null);
+            }
         }
     } else if (resizeStartRef.current) {
         setIsResizing(false);
@@ -188,7 +193,7 @@ const App: React.FC = () => {
             
             if (Math.abs(handZ - appZ) < 150) { // Hover threshold
                 currentHover = app!.id;
-                if (handZ < appZ) { // Press threshold (hand is behind the element)
+                if (handZ < appZ + 20) { // Press threshold (hand is "behind" the element)
                     currentPressedId = app!.id;
                 }
             }
@@ -202,17 +207,18 @@ const App: React.FC = () => {
         takePhoto();
       }
 
+      const handZ = getHandZ(hand);
+      let actionTaken = false;
+
       if (hand.gesture === 'PINCH_DOWN') {
         let pinchedElementIdForDrag: string | null = null;
-        let actionTaken = false;
-
+        
         // Window interactions
         if (activeWindow && !isResizing && hands.length === 1) {
-            const handZ = getHandZ(hand);
             const windowZ = -400;
 
             if (isCursorOverElement(hand, windowDragHandleRef.current)) {
-                if (Math.abs(handZ - windowZ) < 150) {
+                if (Math.abs(handZ - windowZ) < 150) { // Must be near the window plane to drag
                     pinchedElementIdForDrag = `drag-${activeWindow.id}`;
                     setIsDragging(true);
                     const cursorX = (1 - hand.cursorPosition.x) * window.innerWidth;
@@ -221,7 +227,7 @@ const App: React.FC = () => {
                     actionTaken = true;
                 }
             } else if (isCursorOverElement(hand, windowCloseButtonRef.current)) {
-                if (handZ < windowZ) { // Push through to close
+                if (handZ < windowZ) { // Must push "through" the window to close
                     setActiveWindow(null);
                     setIsAppGridVisible(true);
                     actionTaken = true;
@@ -230,9 +236,9 @@ const App: React.FC = () => {
         }
 
         // App Grid interactions
-        if (!actionTaken && isAppGridVisible && !activeWindow) {
-            const pinchedApp = apps.find(app => isCursorOverElement(hand, appRefs.current.get(app.id) || null));
-            if(pinchedApp && pinchedApp.id === currentPressedId) {
+        if (!actionTaken && isAppGridVisible && !activeWindow && pressedAppId) {
+            const pinchedApp = apps.find(app => app.id === pressedAppId && isCursorOverElement(hand, appRefs.current.get(app.id) || null));
+            if(pinchedApp) {
                 openApp(pinchedApp.id);
                 actionTaken = true;
             }
@@ -240,16 +246,18 @@ const App: React.FC = () => {
 
         // Dock interactions
         if (!actionTaken) {
-            const handZ = getHandZ(hand);
             const dockZ = 0; // Dock is at z=0 plane
-            if (handZ < dockZ) { // Must push through the screen plane
+            if (handZ < dockZ + 20) { // Must push through the screen plane
                 if (isCursorOverElement(hand, dockRefs.current.get('grid') || null)) {
                     setIsAppGridVisible(v => !v);
                     if (activeWindow) setActiveWindow(null);
+                    actionTaken = true;
                 } else if (isCursorOverElement(hand, dockRefs.current.get('camera') || null)) {
                     toggleFacingMode();
+                    actionTaken = true;
                 } else if (isCursorOverElement(hand, dockRefs.current.get('recenter') || null)) {
                     recenter();
+                    actionTaken = true;
                 }
             }
         }
@@ -267,7 +275,7 @@ const App: React.FC = () => {
       }
     });
 
-  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, takePhoto, getAppPositionZ]);
+  }, [hands, apps, openApp, isDragging, isResizing, activeWindow, dragOffset, isAppGridVisible, recenter, toggleFacingMode, takePhoto, getAppPositionZ, pressedAppId]);
   
   const renderContent = () => {
     if (isTrackerLoading) {
@@ -303,6 +311,7 @@ const App: React.FC = () => {
           dockRefs={dockRefs}
           isActive={isDockActive}
           onMouseEnter={activateDock}
+          isBlurred={!!activeWindow}
         />
         
         <AppGrid 
@@ -311,6 +320,7 @@ const App: React.FC = () => {
             hoveredAppId={hoveredAppId}
             pressedAppId={pressedAppId}
             isVisible={isAppGridVisible && !activeWindow}
+            isBlurred={!!activeWindow}
         />
 
         {activeWindow && (
@@ -348,16 +358,24 @@ const App: React.FC = () => {
     );
   };
 
-  const renderUI = () => (
-    <div 
-      className="absolute inset-0" 
-      style={{ perspective: '1000px', transformStyle: 'preserve-3d' }}
-    >
-      <div className="absolute inset-0" style={{ transform: worldTransform }}>
-          {renderContent()}
-      </div>
-    </div>
-  );
+  const renderUI = (eye: 'left' | 'right') => {
+    // Average human IPD is ~64mm. We'll use a pixel value for the offset.
+    const eyeOffset = eye === 'left' ? -32 : 32;
+    return (
+        <div
+            className="absolute inset-0"
+            style={{
+                perspective: '1200px',
+                perspectiveOrigin: `calc(50% - ${eyeOffset}px) 50%`,
+                transformStyle: 'preserve-3d',
+            }}
+        >
+            <div className="absolute inset-0" style={{ transform: worldTransform, transformStyle: 'preserve-3d' }}>
+                {renderContent()}
+            </div>
+        </div>
+    );
+  };
   
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-black flex items-center justify-center font-sans select-none">
@@ -372,11 +390,11 @@ const App: React.FC = () => {
       {isTakingPhoto && <div className="absolute inset-0 bg-white z-50 animate-photo-flash pointer-events-none"></div>}
       <div className="vr-container absolute inset-0">
         <div className="left-eye">
-          <div className="eye-content">{renderUI()}</div>
+          <div className="eye-content">{renderUI('left')}</div>
         </div>
         <div className="vr-divider" />
         <div className="right-eye">
-          <div className="eye-content">{renderUI()}</div>
+          <div className="eye-content">{renderUI('right')}</div>
         </div>
       </div>
     </main>

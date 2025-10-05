@@ -31,6 +31,7 @@ interface BottomDockProps {
     isActive: boolean;
     onMouseEnter: () => void;
     displayMode?: DisplayMode;
+    isBlurred?: boolean;
 }
 
 export const BottomDock: React.FC<BottomDockProps> = ({
@@ -42,6 +43,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
     isActive,
     onMouseEnter,
     displayMode = 'MR',
+    isBlurred,
 }) => {
   const setRef = (id: string) => (el: HTMLButtonElement | null) => {
       if (el) dockRefs.current.set(id, el);
@@ -56,7 +58,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
 
   return (
     <div 
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 transition-opacity duration-500 ease-in-out"
+        className={`absolute bottom-8 left-1/2 -translate-x-1/2 z-20 transition-all duration-500 ease-in-out ${isBlurred ? 'blur-md' : ''}`}
         style={{ 
           transform: 'translateZ(0px) translateX(-50%)',
           opacity: isActive ? 1 : 0.5,
