@@ -38,12 +38,10 @@ export const Transcriber: React.FC = () => {
 
         const startTranscription = async () => {
             try {
-                // FIX: Cast `import.meta` to `any` to access `env` without a type error, as Vite types are not available.
-                if (!(import.meta as any).env.VITE_API_KEY) {
-                    throw new Error("VITE_API_KEY is not set in environment variables.");
+                if (!process.env.API_KEY) {
+                    throw new Error("API_KEY is not set.");
                 }
-                // FIX: Cast `import.meta` to `any` to access `env` without a type error.
-                const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_API_KEY });
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
                 setStatus('Requesting microphone access...');
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
